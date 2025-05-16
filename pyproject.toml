@@ -8,6 +8,7 @@ version = "0.1.0"
 description = "IMF Importer Plugin for NEAT"
 authors = [
     {name="Bård Henning Tvedt", email="bard.tvedt@webstep.no"},
+    {name="Arne Måge", email="arne.mage@webstep.no"},
     {name="Nikola Vasiljevic", email="nikola.vasiljevic@cognite.com"},
 ]
 license = "Apache-2.0"
