@@ -28,4 +28,4 @@ cognite-neat = { git = "https://github.com/cognitedata/neat.git", branch = "plug
 
 
 [project.entry-points."cognite.neat.core.plugins.data_model.importers"]
-imf = "imf_importer.importer:IMFDataModelImporter"
+imf = "imf_importer.plugin:IMFDataModelImporter"
