@@ -294,7 +294,7 @@ wheels = [
 [[package]]
 name = "cognite-neat"
 version = "0.0.0"
-source = { git = "https://github.com/cognitedata/neat.git?branch=plugin-system#a625a48d941a69093d2a50454f889d7b29b0ebe7" }
+source = { git = "https://github.com/cognitedata/neat.git?branch=plugin-system#82fa215ec9fb389dbbec5129cea7ca405e104d1b" }
 dependencies = [
     { name = "backports-strenum", marker = "python_full_version < '3.11'" },
     { name = "cognite-sdk" },

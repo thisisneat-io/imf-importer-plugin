@@ -7,15 +7,16 @@ from ._imf2data_model import IMFImporter
 __all__ = ["IMFDataModelImporter"]
 
 class IMFDataModelImporter(DataModelImporter):
-    def configure(self, source: str, *, language:str = "en") -> IMFImporter:
+
+    def configure(self, io: Path, *, language: str = "en") -> IMFImporter:
         """
         Extracts the rules from the IMF RDF file.
 
         Args:
-            filepath (str): Path to the IMF RDF file.
+            io (Path): Path to the IMF RDF file.
 
         Returns:
             Configured IMFImporter instance.
         """
 
-        return IMFImporter.from_file(filepath=Path(source), language=language)
+        return IMFImporter.from_file(filepath=io, language=language)
