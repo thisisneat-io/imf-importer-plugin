@@ -24,9 +24,9 @@ dev = [
 ]
 
 [tool.uv.sources]
-cognite-neat = { git = "https://github.com/cognitedata/neat.git", branch = "plugin-system" }
+cognite-neat = { git = "https://github.com/cognitedata/neat.git", branch = "NEAT-1031-plugin-access-via-session" }
 
 
 
-[project.entry-points."cognite.neat.core.plugins.data_model.importers"]
-imf = "imf_importer.plugin:IMFDataModelImporter"
+[project.entry-points."cognite.neat.plugins.data_model.importers"]
+imf = "imf_importer.plugin:IMFDataModelImporterPlugin"

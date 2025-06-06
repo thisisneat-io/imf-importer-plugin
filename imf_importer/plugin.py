@@ -1,22 +1,23 @@
 from pathlib import Path
 
-from cognite.neat.core.plugins.data_model.importers import DataModelImporter
+from cognite.neat.plugins.data_model.importers import DataModelImporterPlugin
 from ._imf2data_model import IMFImporter
 
 
-__all__ = ["IMFDataModelImporter"]
+__all__ = ["IMFDataModelImporterPlugin"]
 
-class IMFDataModelImporter(DataModelImporter):
+
+class IMFDataModelImporterPlugin(DataModelImporterPlugin):
 
     def configure(self, io: Path, *, language: str = "en") -> IMFImporter:
         """
-        Extracts the rules from the IMF RDF file.
+        Configures the IMFImporter with the provided RDF file.
 
         Args:
             io (Path): Path to the IMF RDF file.
 
         Returns:
-            Configured IMFImporter instance.
+            Configured IMFImporter to be passed to the NeatSession for data model import.
         """
 
         return IMFImporter.from_file(filepath=io, language=language)
