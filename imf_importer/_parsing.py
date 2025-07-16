@@ -222,7 +222,7 @@ def handle_meta(
         )
 
 def _convert_rdflib_content(content: Literal | URIRef | dict | list) -> Any:
-    if isinstance(content, Literal) | isinstance(content, URIRef):
+    if isinstance(content, Literal) or isinstance(content, URIRef):
         return content.toPython()
     elif isinstance(content, dict):
         return {key: _convert_rdflib_content(value) for key, value in content.items()}

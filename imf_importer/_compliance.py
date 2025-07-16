@@ -15,7 +15,7 @@ def make_property_compliant(res: dict) -> dict:
     }
 
 def _make_identifier_compliant(string: str) -> str:
-    return _add_prefix(_replace_hypen(string))
+    return _add_prefix(_replace_hyphen(string))
 
 def _remove_namespace(uri: str) -> str:
     if not _is_uri(uri):
@@ -33,5 +33,5 @@ def _is_uri(string: str) -> bool:
 def _add_prefix(term: str) -> str:
     return "IMF_" + term
 
-def _replace_hypen(string: str) -> str:
+def _replace_hyphen(string: str) -> str:
     return string.replace("-", "_")
