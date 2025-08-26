@@ -1,3 +1,4 @@
+import uuid
 from urllib.parse import urlparse
 
 def make_concept_compliant(res: dict) -> dict:
@@ -15,7 +16,10 @@ def make_property_compliant(res: dict) -> dict:
     }
 
 def _make_identifier_compliant(string: str) -> str:
-    return _add_prefix(_replace_hyphen(string))
+    if _is_valid_uuid(string):
+        return _add_prefix(_replace_hyphen(string))
+
+    return string
 
 def _remove_namespace(uri: str) -> str:
     if not _is_uri(uri):
@@ -35,3 +39,10 @@ def _add_prefix(term: str) -> str:
 
 def _replace_hyphen(string: str) -> str:
     return string.replace("-", "_")
+
+def _is_valid_uuid(uuid_to_test: str, version: int = 4) -> bool:
+    try:
+        uuid_obj = uuid.UUID(uuid_to_test, version=version)
+        return str(uuid_obj) == uuid_to_test
+    except ValueError:
+        return False
