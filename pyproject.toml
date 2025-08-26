@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "neat-imf-importer-plugin"
-version = "0.1.0"
+version = "0.1.1"
 description = "IMF Importer Plugin for NEAT"
 authors = [
     {name="Bård Henning Tvedt", email="bard.tvedt@webstep.no"},
