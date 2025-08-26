@@ -1,6 +1,6 @@
-from typing import cast
+from typing import cast, Any
 
-from rdflib import BNode, Graph
+from rdflib import BNode, Graph, Literal, URIRef
 from rdflib.plugins.sparql import prepareQuery
 from rdflib.query import ResultRow
 
@@ -10,73 +10,59 @@ from cognite.neat.core._issues.warnings._resources import (
     ResourceRedefinedWarning,
     ResourceRetrievalWarning,
 )
-from cognite.neat.core._utils.rdf_ import convert_rdflib_content
+
+from ._compliance import (
+    make_concept_compliant,
+    make_property_compliant
+)
 
 CONCEPTS_QUERY = """
-    SELECT ?concept ?name ?description ?implements
+    SELECT ?concept ?name ?description ?implements ?instance_source
     WHERE {{
-        VALUES ?type {{ imf:BlockType imf:TerminalType imf:AttributeType }}
-        ?concept a ?type .
+        VALUES ?implements {{ imf:Block imf:Terminal }}
+        ?concept rdfs:subClassOf ?implements .
 
-        OPTIONAL {{?concept rdfs:subClassOf ?parent }}.
         OPTIONAL {{?concept rdfs:label|skos:prefLabel ?name }}.
         OPTIONAL {{?concept rdfs:comment|skos:definition ?description}}.
 
-
-        # Add imf:Attribute as parent class when no parent is found
-        BIND(IF(!bound(?parent) && ?type = imf:AttributeType, imf:Attribute, ?parent) AS ?implements)
+        BIND(?concept AS ?instance_source)
 
         # FILTERS
         FILTER (!isBlank(?concept))
-        FILTER (!bound(?implements) || !isBlank(?implements))
-
         FILTER (!bound(?name) || LANG(?name) = "" || LANGMATCHES(LANG(?name), "{language}"))
         FILTER (!bound(?description) || LANG(?description) = "" || LANGMATCHES(LANG(?description), "{language}"))
-    }}
-    """
+    }}"""
 
 PROPERTIES_QUERY = """
-    SELECT ?concept ?property_ ?name ?description ?value_type ?min_count ?max_count ?default
+    SELECT ?concept ?property_ ?name ?description ?value_type ?instance_source ?min_count ?max_count ?default
     WHERE
     {{
-        # CASE 1: Handling Blocks and Terminals
-        {{
-            VALUES ?type {{ imf:BlockType imf:TerminalType }}
-            ?concept a ?type ;
-                sh:property ?propertyShape .
-                ?propertyShape sh:path ?property_ .
+        VALUES ?subClass {{ imf:Block imf:Terminal }}
+        ?concept rdfs:subClassOf ?subClass ;
+            sh:property ?propertyShape .
+            ?propertyShape sh:path ?property_ .
 
-            OPTIONAL {{ ?property_ skos:prefLabel ?name . }}
-            OPTIONAL {{ ?property_ skos:definition ?description . }}
-            OPTIONAL {{ ?property_ rdfs:range ?range . }}
+        OPTIONAL {{ ?property_ skos:prefLabel ?name . }}
+        OPTIONAL {{ ?property_ skos:definition ?description . }}
+        OPTIONAL {{ ?property_ rdfs:range ?range . }}
 
-            OPTIONAL {{ ?propertyShape sh:minCount ?min_count . }}
-            OPTIONAL {{ ?propertyShape sh:maxCount ?max_count . }}
-            OPTIONAL {{ ?propertyShape sh:hasValue ?default . }}
-            OPTIONAL {{ ?propertyShape sh:class | sh:qualifiedValueShape/sh:class ?valueShape . }}
-        }}
+        OPTIONAL {{ ?propertyShape sh:minCount ?min_count . }}
+        OPTIONAL {{ ?propertyShape sh:maxCount ?max_count . }}
+        OPTIONAL {{ ?propertyShape sh:nodeKind ?nodeKind . }}
+        OPTIONAL {{ ?propertyShape sh:hasValue ?default . }}
 
-        UNION
+        BIND(?property_ AS ?instance_source)
+        BIND(IF(BOUND(?range), ?range, xsd:string) AS ?value_type)
+        BIND(IF(BOUND(?default) && !BOUND(?min_count), 1, 0) AS ?min_count)
+        BIND(IF(BOUND(?default) && !BOUND(?max_count), 1, ?undefined) AS ?max_count)
 
-        # CASE 2: Handling Attributes
-        {{
-            ?concept a imf:AttributeType .
-            BIND(xsd:anyURI AS ?valueShape)
-            BIND(imf:predicate AS ?property_)
-            ?concept  ?property_ ?defaultURI .
-            BIND(STR(?defaultURI) AS ?default)
-
-        }}
-
-        # Set the value type for the property based on sh:class, sh:qualifiedValueType or rdfs:range
-        BIND(IF(BOUND(?valueShape), ?valueShape, IF(BOUND(?range) , ?range , ?valueShape)) AS ?value_type)
+        FILTER(?property_ != imf:hasTerminal && ?property_ != imf:hasPart)
 
         FILTER (!isBlank(?property_))
         FILTER (!bound(?concept) || !isBlank(?concept))
         FILTER (!bound(?name) || LANG(?name) = "" || LANGMATCHES(LANG(?name), "{language}"))
         FILTER (!bound(?description) || LANG(?description) = "" || LANGMATCHES(LANG(?description), "{language}"))
-    }}
-    """
+    }}"""
 
 
 def parse_concepts(graph: Graph, language: str, issue_list: IssueList) -> tuple[dict, IssueList]:
@@ -87,7 +73,7 @@ def parse_concepts(graph: Graph, language: str, issue_list: IssueList) -> tuple[
         language: Language to use for parsing, by default "en"
 
     Returns:
-        Dataframe containing owl classes
+        Dataframe containing imf types
     """
 
     concepts: dict[str, dict] = {}
@@ -96,13 +82,15 @@ def parse_concepts(graph: Graph, language: str, issue_list: IssueList) -> tuple[
     expected_keys = [str(v) for v in query.algebra._vars]
 
     for raw in graph.query(query):
-        res: dict = convert_rdflib_content(cast(ResultRow, raw).asdict(), True)
+
+        res: dict = _convert_rdflib_content(cast(ResultRow, raw).asdict())
         res = {key: res.get(key, None) for key in expected_keys}
 
-        concept_id = res["concept"]
+        compliant_res = make_concept_compliant(res)
+        concept_id = compliant_res["concept"]
 
         # Safeguarding against incomplete semantic definitions
-        if res["implements"] and isinstance(res["implements"], BNode):
+        if compliant_res["implements"] and isinstance(compliant_res["implements"], BNode):
             issue_list.append(
                 ResourceRetrievalWarning(
                     concept_id,
@@ -113,23 +101,23 @@ def parse_concepts(graph: Graph, language: str, issue_list: IssueList) -> tuple[
             continue
 
         if concept_id not in concepts:
-            concepts[concept_id] = res
+            concepts[concept_id] = compliant_res
         else:
             # Handling implements
             if concepts[concept_id]["implements"] and isinstance(concepts[concept_id]["implements"], list):
-                if res["implements"] not in concepts[concept_id]["implements"]:
-                    concepts[concept_id]["implements"].append(res["implements"])
+                if compliant_res["implements"] not in concepts[concept_id]["implements"]:
+                    concepts[concept_id]["implements"].append(compliant_res["implements"])
 
             elif concepts[concept_id]["implements"] and isinstance(concepts[concept_id]["implements"], str):
                 concepts[concept_id]["implements"] = [concepts[concept_id]["implements"]]
 
-                if res["implements"] not in concepts[concept_id]["implements"]:
-                    concepts[concept_id]["implements"].append(res["implements"])
-            elif res["implements"]:
-                concepts[concept_id]["implements"] = [res["implements"]]
+                if compliant_res["implements"] not in concepts[concept_id]["implements"]:
+                    concepts[concept_id]["implements"].append(compliant_res["implements"])
+            elif compliant_res["implements"]:
+                concepts[concept_id]["implements"] = compliant_res["implements"]
 
-            handle_meta("concept", concepts, concept_id, res, "name", issue_list)
-            handle_meta("concept", concepts, concept_id, res, "description", issue_list)
+            handle_meta("concept", concepts, concept_id, compliant_res, "name", issue_list)
+            handle_meta("concept", concepts, concept_id, compliant_res, "description", issue_list)
 
     if not concepts:
         issue_list.append(NeatValueError("Unable to parse concepts"))
@@ -154,13 +142,14 @@ def parse_properties(graph: Graph, language: str, issue_list: IssueList) -> tupl
     expected_keys = [str(v) for v in query.algebra._vars]
 
     for raw in graph.query(query):
-        res: dict = convert_rdflib_content(cast(ResultRow, raw).asdict(), True)
+        res: dict = _convert_rdflib_content(cast(ResultRow, raw).asdict())
         res = {key: res.get(key, None) for key in expected_keys}
 
-        property_id = res["property_"]
+        converted_res = make_property_compliant(res)
+        property_id = converted_res["property_"]
 
         # Safeguarding against incomplete semantic definitions
-        if not res["concept"] or isinstance(res["concept"], BNode):
+        if not converted_res["concept"] or isinstance(converted_res["concept"], BNode):
             issue_list.append(
                 ResourceRetrievalWarning(
                     property_id,
@@ -171,7 +160,7 @@ def parse_properties(graph: Graph, language: str, issue_list: IssueList) -> tupl
             continue
 
         # Safeguarding against incomplete semantic definitions
-        if not res["value_type"] or isinstance(res["value_type"], BNode):
+        if not converted_res["value_type"] or isinstance(converted_res["value_type"], BNode):
             issue_list.append(
                 ResourceRetrievalWarning(
                     property_id,
@@ -181,25 +170,25 @@ def parse_properties(graph: Graph, language: str, issue_list: IssueList) -> tupl
             )
             continue
 
-        id_ = f"{res['concept']}.{res['property_']}"
+        id_ = f"{converted_res['concept']}.{converted_res['property_']}"
 
         if id_ not in properties:
-            properties[id_] = res
+            properties[id_] = converted_res
             properties[id_]["value_type"] = [properties[id_]["value_type"]]
         else:
-            handle_meta("property", properties, id_, res, "name", issue_list)
+            handle_meta("property", properties, id_, converted_res, "name", issue_list)
             handle_meta(
                 "property",
                 properties,
                 id_,
-                res,
+                converted_res,
                 "description",
                 issue_list,
             )
 
             # Handling multi-value types
-            if res["value_type"] not in properties[id_]["value_type"]:
-                properties[id_]["value_type"].append(res["value_type"])
+            if converted_res["value_type"] not in properties[id_]["value_type"]:
+                properties[id_]["value_type"].append(converted_res["value_type"])
 
     for prop in properties.values():
         prop["value_type"] = ", ".join(prop["value_type"])
@@ -208,7 +197,6 @@ def parse_properties(graph: Graph, language: str, issue_list: IssueList) -> tupl
         issue_list.append(NeatValueError("Unable to parse properties"))
 
     return properties, issue_list
-
 
 def handle_meta(
     resource_type: str,
@@ -232,3 +220,13 @@ def handle_meta(
                 new_value=res[feature],
             )
         )
+
+def _convert_rdflib_content(content: Literal | URIRef | dict | list) -> Any:
+    if isinstance(content, Literal) or isinstance(content, URIRef):
+        return content.toPython()
+    elif isinstance(content, dict):
+        return {key: _convert_rdflib_content(value) for key, value in content.items()}
+    elif isinstance(content, list):
+        return [_convert_rdflib_content(item) for item in content]
+    else:
+        return content

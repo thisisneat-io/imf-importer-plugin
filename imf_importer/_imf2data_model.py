@@ -1,13 +1,8 @@
-"""This module performs importing of various formats to one of serializations for which
-there are loaders to data model pydantic class."""
-
-
 from datetime import datetime
 from pathlib import Path
-from typing import Any
 
 from cognite.client import data_modeling as dm
-from rdflib import Graph, Namespace, URIRef
+from rdflib import Graph
 from typing_extensions import Self
 
 from cognite.neat.core._constants import get_default_prefixes_and_namespaces
@@ -22,8 +17,6 @@ from cognite.neat.core._data_model.models.entities import UnknownEntity
 from cognite.neat.core._issues import IssueList, MultiValueError
 from cognite.neat.core._issues.errors import FileReadError
 from cognite.neat.core._issues.errors._general import NeatValueError
-from cognite.neat.core._store import NeatInstanceStore
-from cognite.neat.core._utils.rdf_ import get_namespace
 
 from ._parsing import (
     parse_concepts,
@@ -33,10 +26,8 @@ from ._parsing import (
 DEFAULT_NON_EXISTING_NODE_TYPE = AnyURI()
 DEFAULT_IMF_DATA_MODEL_ID = ("imf_space", "IMFDataModel", "v1")
 
-
 class IMFImporter(BaseImporter[UnverifiedConceptualDataModel]):
     """Convert IMF Types provided as SHACL shapes to unverified data model."""
-
 
     def __init__(
         self,
@@ -58,22 +49,6 @@ class IMFImporter(BaseImporter[UnverifiedConceptualDataModel]):
     @property
     def description(self) -> str:
         return f"IMF Types importer as unverified conceptual data model"
-
-    @classmethod
-    def from_graph_store(
-        cls,
-        store: NeatInstanceStore,
-        language: str,
-        data_model_id: (dm.DataModelId | tuple[str, str, str]) = DEFAULT_IMF_DATA_MODEL_ID,
-        non_existing_node_type: UnknownEntity | AnyURI = DEFAULT_NON_EXISTING_NODE_TYPE,
-    ) -> Self:
-        return cls(
-            IssueList(title=f"{cls.__name__} issues"),
-            store.dataset,
-            data_model_id=data_model_id,
-            non_existing_node_type=non_existing_node_type,
-            language=language,
-        )
 
     @classmethod
     def from_file(
@@ -115,38 +90,27 @@ class IMFImporter(BaseImporter[UnverifiedConceptualDataModel]):
             raise MultiValueError(self.issue_list.errors)
 
         data_model_dict = self._to_data_model_components()
-
         data_model = UnverifiedConceptualDataModel.load(data_model_dict)
-        self.issue_list.trigger_warnings()
-        return ImportedDataModel(data_model, {})
 
+        self.issue_list.trigger_warnings()
+
+        return ImportedDataModel(data_model, {})
 
     def _to_data_model_components(
         self,
     ) -> dict:
-        classes, issue_list = parse_concepts(self.graph, self.language, self.issue_list)
+        concepts, issue_list = parse_concepts(self.graph, self.language, self.issue_list)
         self.issue_list = issue_list
         properties, issue_list = parse_properties(self.graph, self.language, self.issue_list)
         self.issue_list = issue_list
 
         components = {
             "Metadata": self._metadata,
-            "Concepts": list(classes.values()) if classes else [],
+            "Concepts": list(concepts.values()) if concepts else [],
             "Properties": list(properties.values()) if properties else [],
         }
 
         return components
-
-    @classmethod
-    def _add_uri_namespace_to_prefixes(cls: Any, URI: URIRef, prefixes: dict[str, Namespace]) -> None:
-        """Add URI to prefixes dict if not already present
-
-        Args:
-            URI: URI from which namespace is being extracted
-            prefixes: Dict of prefixes and namespaces
-        """
-        if Namespace(get_namespace(URI)) not in prefixes.values():
-            prefixes[f"prefix_{len(prefixes) + 1}"] = Namespace(get_namespace(URI))
 
     @property
     def _metadata(self) -> dict:
